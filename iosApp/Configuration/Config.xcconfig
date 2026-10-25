@@ -1,0 +1,9 @@
+// Values you set once per Apple Developer account. See README, "iOS setup".
+
+// Your Apple Developer Team ID (Xcode > Settings > Accounts, or developer.apple.com > Membership).
+TEAM_ID =
+
+BUNDLE_ID = com.surajdev.spendwise
+
+// From GoogleService-Info.plist: the REVERSED_CLIENT_ID value. Needed for Google sign-in to return to the app.
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.REPLACE_ME
