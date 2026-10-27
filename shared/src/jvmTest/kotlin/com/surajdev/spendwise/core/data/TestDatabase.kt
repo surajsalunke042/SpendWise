@@ -60,4 +60,17 @@ class FakeRemote : SyncRemoteDataSource {
     override suspend fun pullCategories(uid: String, sinceMillis: Long, limit: Int) =
         categories[uid].orEmpty().values.filter { it.serverUpdatedAtMillis >= sinceMillis }
             .sortedBy { it.serverUpdatedAtMillis }.take(limit)
+
+    var failNextDelete = false
+
+    fun categoriesOf(uid: String): List<CategoryRecord> = categories[uid].orEmpty().values.map { it.record }
+
+    override suspend fun deleteAllData(uid: String) {
+        if (failNextDelete) {
+            failNextDelete = false
+            error("Network unavailable")
+        }
+        expenses.remove(uid)
+        categories.remove(uid)
+    }
 }

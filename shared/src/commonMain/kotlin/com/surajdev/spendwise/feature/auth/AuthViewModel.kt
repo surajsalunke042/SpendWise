@@ -67,8 +67,8 @@ class AuthViewModel(private val auth: AuthRepository) : ViewModel() {
         val email = current.email.trim()
         when {
             !email.contains('@') || !email.contains('.') -> return _state.update { it.copy(error = "Enter a valid email address") }
-            current.mode == AuthMode.SIGN_UP && current.password.length < MIN_PASSWORD ->
-                return _state.update { it.copy(error = "Use at least $MIN_PASSWORD characters for your password") }
+            current.mode == AuthMode.SIGN_UP && current.password.length < MIN_PASSWORD_LENGTH ->
+                return _state.update { it.copy(error = "Use at least $MIN_PASSWORD_LENGTH characters for your password") }
             current.password.isEmpty() -> return _state.update { it.copy(error = "Enter your password") }
         }
         attempt {
@@ -88,7 +88,7 @@ class AuthViewModel(private val auth: AuthRepository) : ViewModel() {
             val error = auth.sendPasswordReset(email)
             _state.update {
                 if (error == null) it.copy(isBusy = false, info = "We've emailed you a link to reset your password.")
-                else it.copy(isBusy = false, error = error.message())
+                else it.copy(isBusy = false, error = error.userMessage())
             }
         }
     }
@@ -109,23 +109,8 @@ class AuthViewModel(private val auth: AuthRepository) : ViewModel() {
             if (error == null) {
                 _effects.send(AuthEffect.SignedIn)
             } else {
-                _state.update { it.copy(isBusy = false, error = if (error == AuthError.Cancelled) null else error.message()) }
+                _state.update { it.copy(isBusy = false, error = if (error == AuthError.Cancelled) null else error.userMessage()) }
             }
         }
-    }
-
-    private fun AuthError.message(): String = when (this) {
-        AuthError.InvalidCredentials -> "That email and password don't match."
-        AuthError.EmailAlreadyInUse -> "An account with this email already exists. Try signing in."
-        AuthError.WeakPassword -> "Choose a stronger password (at least $MIN_PASSWORD characters)."
-        AuthError.InvalidEmail -> "Enter a valid email address."
-        AuthError.Network -> "No internet connection. Your data is safe on this device; try again when you're online."
-        AuthError.Cancelled -> ""
-        AuthError.Unavailable -> "Sign-in isn't available in this build."
-        is AuthError.Unknown -> message ?: "Something went wrong. Please try again."
-    }
-
-    private companion object {
-        const val MIN_PASSWORD = 8
     }
 }

@@ -3,6 +3,7 @@ package com.surajdev.spendwise.feature.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,13 +26,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.surajdev.spendwise.core.common.AppLinks
 import com.surajdev.spendwise.core.designsystem.component.AppIcon
 import com.surajdev.spendwise.core.designsystem.component.LocalBottomBarClearance
 import com.surajdev.spendwise.core.designsystem.component.SurfaceCard
@@ -46,8 +50,10 @@ import com.surajdev.spendwise.core.domain.model.SyncStatus
 import com.surajdev.spendwise.core.domain.model.ThemeMode
 import com.surajdev.spendwise.core.platform.platformName
 import com.surajdev.spendwise.core.platform.rememberNotificationPermissionRequester
+import com.surajdev.spendwise.core.platform.rememberSocialSignInLauncher
 import com.surajdev.spendwise.feature.common.Formats
 import com.surajdev.spendwise.feature.common.TimePickerSheet
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.DrawableResource
@@ -65,13 +71,30 @@ fun SettingsRoute(
         permissionDenied = !granted
         if (granted) viewModel.onIntent(SettingsIntent.ReminderToggled(true))
     }
+    val launcher = rememberSocialSignInLauncher()
+    val scope = rememberCoroutineScope()
+    val reauthMethod = state.user?.let { reauthMethodFor(it, launcher) } ?: ReauthMethod.NONE
     SettingsScreen(
         state = state,
         permissionDenied = permissionDenied,
+        reauthMethod = reauthMethod,
         onIntent = viewModel::onIntent,
         onEnableReminder = requestPermission,
         onOpenCategories = onOpenCategories,
         onSignIn = onSignIn,
+        onConfirmDelete = { password ->
+            when (reauthMethod) {
+                ReauthMethod.PASSWORD -> viewModel.onIntent(SettingsIntent.DeleteAccountWithPassword(password))
+                ReauthMethod.GOOGLE, ReauthMethod.APPLE -> {
+                    viewModel.onIntent(SettingsIntent.DeleteAccountSocialStarted)
+                    scope.launch {
+                        val result = if (reauthMethod == ReauthMethod.GOOGLE) launcher.signInWithGoogle() else launcher.signInWithApple()
+                        viewModel.onIntent(SettingsIntent.DeleteAccountWithSocial(result))
+                    }
+                }
+                ReauthMethod.NONE -> viewModel.onIntent(SettingsIntent.DeleteAccountWithoutReauth)
+            }
+        },
     )
 }
 
@@ -79,13 +102,17 @@ fun SettingsRoute(
 fun SettingsScreen(
     state: SettingsUiState,
     permissionDenied: Boolean,
+    reauthMethod: ReauthMethod,
     onIntent: (SettingsIntent) -> Unit,
     onEnableReminder: () -> Unit,
     onOpenCategories: () -> Unit,
     onSignIn: () -> Unit,
+    onConfirmDelete: (password: String) -> Unit,
 ) {
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
 
     Scaffold(containerColor = Color.Transparent) { padding ->
         Column(
@@ -99,7 +126,13 @@ fun SettingsScreen(
             Text("Settings", style = MaterialTheme.typography.headlineMedium)
 
             SectionLabel("Account & sync", Modifier.padding(top = Spacing.md))
-            AccountCard(state, onSignIn = onSignIn, onSyncNow = { onIntent(SettingsIntent.SyncNow) }, onSignOut = { confirmSignOut = true })
+            AccountCard(
+                state,
+                onSignIn = onSignIn,
+                onSyncNow = { onIntent(SettingsIntent.SyncNow) },
+                onSignOut = { confirmSignOut = true },
+                onDeleteAccount = { confirmDelete = true },
+            )
 
             SectionLabel("Preferences", Modifier.padding(top = Spacing.md))
             SurfaceCard(modifier = Modifier.fillMaxWidth(), contentPadding = 0.dp) {
@@ -165,6 +198,10 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                TextButton(
+                    onClick = { uriHandler.openUri(AppLinks.PRIVACY_POLICY) },
+                    contentPadding = PaddingValues(0.dp),
+                ) { Text("Privacy policy") }
             }
         }
     }
@@ -176,6 +213,22 @@ fun SettingsScreen(
             onConfirm = {
                 onIntent(SettingsIntent.ReminderTimeChanged(it))
                 showTimePicker = false
+            },
+        )
+    }
+    if (state.deleteAccount.completed) {
+        AccountDeletedDialog(onDismiss = {
+            confirmDelete = false
+            onIntent(SettingsIntent.DeleteAccountDismissed)
+        })
+    } else if (confirmDelete && state.user != null) {
+        DeleteAccountDialog(
+            state = state.deleteAccount,
+            method = reauthMethod,
+            onConfirm = onConfirmDelete,
+            onDismiss = {
+                confirmDelete = false
+                onIntent(SettingsIntent.DeleteAccountDismissed)
             },
         )
     }
@@ -206,7 +259,13 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun AccountCard(state: SettingsUiState, onSignIn: () -> Unit, onSyncNow: () -> Unit, onSignOut: () -> Unit) {
+private fun AccountCard(
+    state: SettingsUiState,
+    onSignIn: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit,
+    onDeleteAccount: () -> Unit,
+) {
     SurfaceCard(modifier = Modifier.fillMaxWidth()) {
         when {
             !state.authAvailable -> {
@@ -250,6 +309,9 @@ private fun AccountCard(state: SettingsUiState, onSignIn: () -> Unit, onSyncNow:
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     SecondaryButton("Sync now", onClick = onSyncNow, icon = AppIcons.Sync, modifier = Modifier.weight(1f), enabled = state.syncStatus != SyncStatus.Syncing)
                     SecondaryButton("Sign out", onClick = onSignOut, icon = AppIcons.Logout, modifier = Modifier.weight(1f))
+                }
+                TextButton(onClick = onDeleteAccount, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Delete account", color = MaterialTheme.colorScheme.error)
                 }
             }
         }

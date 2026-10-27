@@ -70,7 +70,7 @@ val dataModule = module {
     single<SettingsRepository> { SettingsRepositoryImpl(get(), get()) }
 
     single { SyncEngine(get(), get(), get(), get()) }
-    single { SyncRepositoryImpl(get(), get(), get(), get(), get(), get(), get<AppScope>()) } bind SyncRepository::class
+    single { SyncRepositoryImpl(get(), get(), get(), get(), get(), get(), get(), get<AppScope>()) } bind SyncRepository::class
 }
 
 val domainModule = module {

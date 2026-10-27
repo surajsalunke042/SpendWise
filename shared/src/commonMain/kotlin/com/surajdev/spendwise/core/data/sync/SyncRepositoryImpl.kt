@@ -4,9 +4,11 @@ import androidx.room3.withWriteTransaction
 import com.surajdev.spendwise.core.data.local.AppPreferences
 import com.surajdev.spendwise.core.database.SpendWiseDatabase
 import com.surajdev.spendwise.core.domain.model.SyncStatus
+import com.surajdev.spendwise.core.domain.repository.AuthError
 import com.surajdev.spendwise.core.domain.repository.AuthRepository
 import com.surajdev.spendwise.core.domain.repository.CategoryRepository
 import com.surajdev.spendwise.core.domain.repository.SyncRepository
+import com.surajdev.spendwise.core.remote.SyncRemoteDataSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -38,6 +40,7 @@ import kotlin.time.Duration.Companion.seconds
 class SyncRepositoryImpl(
     private val auth: AuthRepository,
     private val engine: SyncEngine,
+    private val remote: SyncRemoteDataSource,
     private val database: SpendWiseDatabase,
     private val categories: CategoryRepository,
     private val preferences: AppPreferences,
@@ -115,17 +118,40 @@ class SyncRepositoryImpl(
 
     override suspend fun signOut(keepLocalData: Boolean) = mutex.withLock {
         auth.signOut()
-        if (!keepLocalData) {
-            database.withWriteTransaction {
-                database.expenseDao().deleteAll()
-                database.categoryDao().deleteAll()
-                database.syncCursorDao().clear()
-            }
-            categories.ensureDefaults()
-            preferences.setLastSyncedUid(null)
-        }
+        if (!keepLocalData) clearLocalData()
         preferences.setLastSyncedAt(null)
         lastError.value = null
+    }
+
+    override suspend fun deleteAccount(): AuthError? = mutex.withLock {
+        val uid = auth.currentUserId() ?: return@withLock AuthError.Unavailable
+        // Data first: once the user is gone, the security rules no longer let us touch it.
+        try {
+            remote.deleteAllData(uid)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withLock AuthError.Unknown("Couldn't delete your cloud data. Check your connection and try again.")
+        }
+        auth.deleteCurrentUser()?.let { error ->
+            // The account survives but its cloud copy is gone: make the next sync upload everything again.
+            preferences.setLastSyncedUid(null)
+            return@withLock error
+        }
+        clearLocalData()
+        preferences.setLastSyncedAt(null)
+        lastError.value = null
+        null
+    }
+
+    private suspend fun clearLocalData() {
+        database.withWriteTransaction {
+            database.expenseDao().deleteAll()
+            database.categoryDao().deleteAll()
+            database.syncCursorDao().clear()
+        }
+        categories.ensureDefaults()
+        preferences.setLastSyncedUid(null)
     }
 
     private companion object {

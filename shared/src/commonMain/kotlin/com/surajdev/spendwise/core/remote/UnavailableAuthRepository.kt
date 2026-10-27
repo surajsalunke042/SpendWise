@@ -17,4 +17,8 @@ class UnavailableAuthRepository : AuthRepository {
     override suspend fun signInWithGoogle(idToken: String, accessToken: String?) = AuthError.Unavailable
     override suspend fun signInWithApple(idToken: String, rawNonce: String) = AuthError.Unavailable
     override suspend fun signOut() = Unit
+    override suspend fun reauthenticateWithEmail(password: String) = AuthError.Unavailable
+    override suspend fun reauthenticateWithGoogle(idToken: String, accessToken: String?) = AuthError.Unavailable
+    override suspend fun reauthenticateWithApple(idToken: String, rawNonce: String) = AuthError.Unavailable
+    override suspend fun deleteCurrentUser() = AuthError.Unavailable
 }

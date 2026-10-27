@@ -1,4 +1,4 @@
-// Values you set once per Apple Developer account. See README, "iOS setup".
+// Values you set once per Apple Developer account. See docs/DEVELOPMENT.md, "Firebase setup".
 
 // Your Apple Developer Team ID (Xcode > Settings > Accounts, or developer.apple.com > Membership).
 TEAM_ID =

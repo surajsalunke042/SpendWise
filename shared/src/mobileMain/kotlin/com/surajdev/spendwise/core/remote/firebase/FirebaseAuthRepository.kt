@@ -7,9 +7,11 @@ import com.surajdev.spendwise.core.domain.repository.AuthRepository
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.FirebaseNetworkException
 import dev.gitlive.firebase.FirebaseTooManyRequestsException
+import dev.gitlive.firebase.auth.EmailAuthProvider
 import dev.gitlive.firebase.auth.FirebaseAuthEmailException
 import dev.gitlive.firebase.auth.FirebaseAuthInvalidCredentialsException
 import dev.gitlive.firebase.auth.FirebaseAuthInvalidUserException
+import dev.gitlive.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import dev.gitlive.firebase.auth.FirebaseAuthUserCollisionException
 import dev.gitlive.firebase.auth.FirebaseAuthWeakPasswordException
 import dev.gitlive.firebase.auth.FirebaseUser
@@ -54,6 +56,25 @@ class FirebaseAuthRepository : AuthRepository {
         auth.signOut()
     }
 
+    override suspend fun reauthenticateWithEmail(password: String) = attempt {
+        val user = signedInUser()
+        user.reauthenticate(EmailAuthProvider.credential(user.email.orEmpty(), password))
+    }
+
+    override suspend fun reauthenticateWithGoogle(idToken: String, accessToken: String?) = attempt {
+        signedInUser().reauthenticate(GoogleAuthProvider.credential(idToken, accessToken))
+    }
+
+    override suspend fun reauthenticateWithApple(idToken: String, rawNonce: String) = attempt {
+        signedInUser().reauthenticate(OAuthProvider.credential(providerId = "apple.com", idToken = idToken, rawNonce = rawNonce))
+    }
+
+    override suspend fun deleteCurrentUser() = attempt {
+        signedInUser().delete()
+    }
+
+    private fun signedInUser(): FirebaseUser = checkNotNull(auth.currentUser) { "You're signed out. Sign in and try again." }
+
     /** Runs a Firebase call and maps failures to [AuthError]; returns null on success. */
     private suspend fun attempt(block: suspend () -> Unit): AuthError? = try {
         block()
@@ -72,6 +93,8 @@ class FirebaseAuthRepository : AuthRepository {
         if (e.message.orEmpty().contains("email", ignoreCase = true) &&
             e.message.orEmpty().contains("badly formatted", ignoreCase = true)
         ) AuthError.InvalidEmail else AuthError.InvalidCredentials
+    } catch (e: FirebaseAuthRecentLoginRequiredException) {
+        AuthError.RequiresRecentLogin
     } catch (e: FirebaseNetworkException) {
         AuthError.Network
     } catch (e: FirebaseTooManyRequestsException) {

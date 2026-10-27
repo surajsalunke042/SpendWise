@@ -13,6 +13,9 @@ interface SyncRemoteDataSource {
     suspend fun pushCategories(uid: String, records: List<CategoryRecord>)
 
     suspend fun pullCategories(uid: String, sinceMillis: Long, limit: Int): List<RemoteChange<CategoryRecord>>
+
+    /** Deletes every expense and category stored for [uid]. Must fail, not silently skip, when offline. */
+    suspend fun deleteAllData(uid: String)
 }
 
 data class RemoteChange<T>(val record: T, val serverUpdatedAtMillis: Long)
@@ -54,4 +57,5 @@ class NoOpSyncRemoteDataSource : SyncRemoteDataSource {
     override suspend fun pullExpenses(uid: String, sinceMillis: Long, limit: Int) = emptyList<RemoteChange<ExpenseRecord>>()
     override suspend fun pushCategories(uid: String, records: List<CategoryRecord>) = Unit
     override suspend fun pullCategories(uid: String, sinceMillis: Long, limit: Int) = emptyList<RemoteChange<CategoryRecord>>()
+    override suspend fun deleteAllData(uid: String) = Unit
 }

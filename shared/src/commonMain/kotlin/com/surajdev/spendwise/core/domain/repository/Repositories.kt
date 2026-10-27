@@ -68,6 +68,8 @@ sealed interface AuthError {
     data object Network : AuthError
     data object Cancelled : AuthError
     data object Unavailable : AuthError
+    /** Firebase wants a fresh sign-in before a sensitive action such as deleting the account. */
+    data object RequiresRecentLogin : AuthError
     data class Unknown(val message: String?) : AuthError
 }
 
@@ -90,6 +92,16 @@ interface AuthRepository {
     suspend fun signInWithApple(idToken: String, rawNonce: String): AuthError?
 
     suspend fun signOut()
+
+    /** Confirms the signed-in user's identity again; Firebase needs this right before deleting an account. */
+    suspend fun reauthenticateWithEmail(password: String): AuthError?
+
+    suspend fun reauthenticateWithGoogle(idToken: String, accessToken: String?): AuthError?
+
+    suspend fun reauthenticateWithApple(idToken: String, rawNonce: String): AuthError?
+
+    /** Deletes the signed-in user. Call [SyncRepository.deleteAccount] instead, which removes their data first. */
+    suspend fun deleteCurrentUser(): AuthError?
 }
 
 interface SyncRepository {
@@ -103,4 +115,10 @@ interface SyncRepository {
 
     /** Signs out, optionally deleting this device's local copy of the data. */
     suspend fun signOut(keepLocalData: Boolean)
+
+    /**
+     * Permanently deletes the user's cloud data, their account, and this device's copy of the data.
+     * Re-authenticate just before calling this. Returns null on success.
+     */
+    suspend fun deleteAccount(): AuthError?
 }

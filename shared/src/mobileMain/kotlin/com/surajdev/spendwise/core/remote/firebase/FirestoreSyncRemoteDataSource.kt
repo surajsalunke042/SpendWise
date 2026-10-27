@@ -10,6 +10,7 @@ import dev.gitlive.firebase.firestore.BaseTimestampSerializer
 import dev.gitlive.firebase.firestore.CollectionReference
 import dev.gitlive.firebase.firestore.FirebaseFirestore
 import dev.gitlive.firebase.firestore.ServerTimestampBehavior
+import dev.gitlive.firebase.firestore.Source
 import dev.gitlive.firebase.firestore.Timestamp
 import dev.gitlive.firebase.firestore.firestore
 import dev.gitlive.firebase.firestore.firestoreSettings
@@ -74,6 +75,20 @@ class FirestoreSyncRemoteDataSource : SyncRemoteDataSource {
                 RemoteChange(doc.toRecord(), doc.serverUpdatedAt.millis())
             }
 
+    override suspend fun deleteAllData(uid: String) {
+        listOf("expenses", "categories").forEach { name ->
+            val collection = userCollection(uid, name)
+            while (true) {
+                // Read from the server, never the cache: offline this must throw, not report "nothing left".
+                val documents = collection.limit(DELETE_BATCH).get(Source.SERVER).documents
+                if (documents.isEmpty()) break
+                val batch = firestore.batch()
+                documents.forEach { batch.delete(it.reference) }
+                batch.commit()
+            }
+        }
+    }
+
     private fun BaseTimestamp.millis(): Long = when (this) {
         is Timestamp -> toMilliseconds().toLong()
         else -> 0L
@@ -81,6 +96,8 @@ class FirestoreSyncRemoteDataSource : SyncRemoteDataSource {
 
     private companion object {
         const val SERVER_UPDATED_AT = "serverUpdatedAt"
+        // Firestore allows at most 500 writes per batch.
+        const val DELETE_BATCH = 400
     }
 }
 
